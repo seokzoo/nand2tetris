@@ -1,0 +1,60 @@
+/**
+ CHIP PC {
+    IN in[16], inc, load, reset;
+    OUT out[16];
+ CHIP ALU {
+    IN
+        x[16], y[16],  // 16-bit inputs  zx, // zero the x input?  nx, // negate the x input?
+        zy, // zero the y input?   ny, // negate the y input?
+        f,  // compute (out = x + y) or (out = x & y)?   no; // negate the out output?
+    OUT
+        out[16], // 16-bit output
+        zr,      // if (out == 0) equals 1, else 0
+        ng;      // if (out < 0)  equals 1, else 0
+ */
+CHIP CPU {
+
+    IN  inM[16],         // M value input  (M = contents of RAM[A])
+        instruction[16], // Instruction for execution
+        reset;           // Signals whether to restart the current
+                         // program (reset==1) or continue executing
+                         // the current program (reset==0).
+
+    OUT outM[16],        // M value output
+        writeM,          // Write to M? 
+        addressM[15],    // Address in data memory (of M)
+        pc[15];          // Address of next instruction
+
+    PARTS:
+    Mux16(a=outA, b=inM, sel=instruction[12], out=outAM);
+    And16(a=true, b=instruction, out[11]=zx);
+    ALU(x=DRegister, y=outAM, zx=zx, nx=instruction[10], zy=instruction[9], ny=instruction[8], f=instruction[7], no=instruction[6], out=M, zr=zr, ng=ng);
+    And16(a=true, b=M, out=outM);
+
+    /* A-reg */
+    ARegister(in=MuxAout, load=loadA, out=outA); // A-reg
+    Mux16(a=instruction, b=M, sel=instruction[15], out=MuxAout);
+    And(a=instruction[15], b=instruction[5], out=storeResultAFlag);
+    Not(in=instruction[15], out=storeInAFlag);
+    Or(a=storeResultAFlag, b=storeInAFlag, out=loadA);
+    And16(a=true, b=outA, out[0..14]=addressM);
+
+    /* D-reg */
+    DRegister(in=M, load=loadD, out=DRegister); // D-reg
+    And(a=instruction[15], b=instruction[4], out=loadD);
+
+    /* store in RAM */
+    And(a=instruction[15], b=instruction[3], out=writeM);
+
+    /* Brench Instruction & PC */
+    PC(in=outA, inc=true, load=jmpflag, reset=reset, out[0..14]=pc);
+    Not(in=ng, out=notng);
+    Not(in=zr, out=notzr);
+    And(a=notzr, b=notng, out=pos);
+    And(a=instruction[1], b=zr, out=zrflag);
+    And(a=instruction[0], b=pos, out=posflag);
+    And(a=instruction[2], b=ng, out=ngflag);
+    Or(a=zrflag, b=posflag, out=o1);
+    Or(a=o1, b=ngflag, out=o2);
+    And(a=instruction[15], b=o2, out=jmpflag);
+}
