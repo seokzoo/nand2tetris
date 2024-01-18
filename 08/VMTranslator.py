@@ -43,10 +43,13 @@ class Translator:
             'neg' : '-',
             'not' : '!' 
         }
+        self.stackArithmeticOps = ['add', 'sub', 'or', 'and', 'neg', 'not', 'eq', 'gt', 'lt', 'push', 'pop']
+        self.programControlOps = ['label', 'goto', 'if-goto']
 
     def translateStackArithmeticOp(self, splited):
         nToken = len(splited)
         opcode = splited[0].lower()
+        random_hash = secrets.token_hex(nbytes=16)
         if nToken == 1: # Arithmetic & Logical
             if opcode in ['add', 'sub', 'or', 'and']:
                 return f'''@SP
@@ -269,13 +272,14 @@ D;JGT'''
 
     def translate(self, code):
         splited = code.strip().split(' ')
-        random_hash = secrets.token_hex(nbytes=16)
         opcode = splited[0].lower()
 
-        if opcode in ['add', 'sub', 'or', 'and', 'neg', 'not', 'eq', 'gt', 'lt', 'push', 'pop']:
+        if opcode in self.stackArithmeticOps:
             return self.translateStackArithmeticOp(splited)
-        elif opcode in ['label', 'goto', 'if-goto']:
+        elif opcode in self.programControlOps:
             return self.translateProgramControlOp(splited)
+
+        raise Exception
 
 def main(filename):
     with open(filename) as f:
