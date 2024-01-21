@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 import secrets
@@ -44,7 +45,9 @@ class Translator:
             'not' : '!' 
         }
         self.stackArithmeticOps = ['add', 'sub', 'or', 'and', 'neg', 'not', 'eq', 'gt', 'lt', 'push', 'pop']
-        self.programControlOps = ['label', 'goto', 'if-goto']
+        self.programControlOps = ['label', 'goto', 'if-goto', 'call', 'function', 'return']
+        self.nStaticVariables = 0
+        self.staticTable = {}
 
     def translateStackArithmeticOp(self, splited):
         nToken = len(splited)
@@ -215,7 +218,28 @@ A=M
 M=D
 @SP
 M=M+1'''
-            elif ref in ['static', 'temp']:
+            elif ref == 'static':
+                if n not in self.staticTable:
+                    self.staticTable[n] = self.nStaticVariables
+                    self.nStaticVariables += 1
+                if opcode == 'push':
+                    return f'''@{self.pointer_table[ref] + self.staticTable[n]}
+D=M
+@SP
+A=M
+M=D
+@SP
+M=M+1'''
+
+                elif opcode == 'pop':
+                    return f'''@SP
+M=M-1
+@SP
+A=M
+D=M
+@{self.pointer_table[ref] + self.staticTable[n]}
+M=D'''
+            elif ref == 'temp':
                 if opcode == 'push':
                     return f'''@{self.pointer_table[ref] + n}
 D=M
@@ -253,8 +277,9 @@ M=D'''
 
     def translateProgramControlOp(self, splited):
         nToken = len(splited)
+        random_hash = secrets.token_hex(nbytes=16)
+        opcode = splited[0].lower()
         if nToken == 2: # Branching
-            opcode = splited[0].lower()
             label_name = splited[1].lower()
             
             if opcode == 'label':
@@ -268,8 +293,114 @@ M=M-1
 A=M
 D=M
 @label_{label_name}
-D;JGT'''
-
+D;JNE'''
+        elif nToken == 3:
+            function_name = splited[1]
+            nArgs = int(splited[2])
+            if opcode == 'function':
+                snippets = []
+                push_fmt = '''@0
+D=A
+@SP
+A=M
+M=D
+@SP
+M=M+1'''
+                snippets.append(f'(function_{function_name})')
+                for i in range(nArgs):
+                    snippets.append(push_fmt)
+                generated_code = '\n'.join(snippets)
+                return generated_code
+            elif opcode == 'call':
+                snippets = []
+                ret_label = f'ret_{random_hash}'
+                push_fmt = '''@{0}
+D=M
+@SP
+A=M
+M=D
+@SP
+M=M+1'''
+                snippets.append(f'''@{ret_label}
+D=A
+@SP
+A=M
+M=D
+@SP
+M=M+1''')
+                for operand in ['LCL', 'ARG', 'THIS', 'THAT']:
+                    snippets.append(push_fmt.format(operand))
+                snippets.append(f'''@SP
+D=M
+@5
+D=D-A
+@{nArgs}
+D=D-A
+@ARG
+M=D''')
+                snippets.append(f'''@SP
+D=M
+@LCL
+M=D''')
+                snippets.append(f'''@function_{function_name}
+0;JMP''')
+                snippets.append(f'({ret_label})')
+                generated_code = '\n'.join(snippets)
+                return generated_code
+        elif nToken == 1:
+            if opcode == 'return':
+                return f'''@LCL
+D=M
+@R14
+M=D
+D=M
+@5
+A=D-A
+D=M
+@R15
+M=D
+@SP
+M=M-1
+A=M
+D=M
+@ARG
+A=M
+M=D
+@ARG
+D=M
+@SP
+M=D+1
+@R14
+D=M
+@1
+A=D-A
+D=M
+@THAT
+M=D
+@R14
+D=M
+@2
+A=D-A
+D=M
+@THIS
+M=D
+@R14
+D=M
+@3
+A=D-A
+D=M
+@ARG
+M=D
+@R14
+D=M
+@4
+A=D-A
+D=M
+@LCL
+M=D
+@R15
+A=M
+0;JMP'''
     def translate(self, code):
         splited = code.strip().split(' ')
         opcode = splited[0].lower()
@@ -281,14 +412,31 @@ D;JGT'''
 
         raise Exception
 
-def main(filename):
-    with open(filename) as f:
-        removed = stripLine(removeInlineComment(f.readlines()))
-        data = '\n'.join(line for line in removed)
-        code = re.sub('\/\*([\s\S]*?)\*\/', '', data)
+def main(path):
+    if os.path.isfile(path):
+        with open(path) as f:
+            removed = stripLine(removeInlineComment(f.readlines()))
+            data = '\n'.join(line for line in removed)
+            code = re.sub('\/\*([\s\S]*?)\*\/', '', data)
+            translator = Translator()
+            for line in code.split('\n'):
+                print(translator.translate(line))
+    else:
         translator = Translator()
-        for line in code.split('\n'):
-            print(translator.translate(line))
+        print('''@256
+D=A
+@SP
+M=D''')
+        print(translator.translateProgramControlOp(['call', 'Sys.init', '0']))
+        for file in os.scandir(path):
+            translator.staticTable = {}
+            if file.path.endswith(('.vm')):
+                with open(file) as f:
+                    removed = stripLine(removeInlineComment(f.readlines()))
+                    data = '\n'.join(line for line in removed)
+                    code = re.sub('\/\*([\s\S]*?)\*\/', '', data)
+                    for line in code.split('\n'):
+                        print(translator.translate(line))
 
 if __name__ == "__main__":
     main(sys.argv[1])

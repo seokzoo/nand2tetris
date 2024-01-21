@@ -126,7 +126,7 @@ M=M-1
 A=M
 D=M
 @label_compute_element
-D;JGT
+D;JNE
 @label_end
 0;JMP
 (label_compute_element)
