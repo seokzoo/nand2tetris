@@ -40,14 +40,14 @@ A=M
 D=M
 @17
 M=D
-@19
+@17
 D=M
 @SP
 A=M
 M=D
 @SP
 M=M+1
-@17
+@18
 D=M
 @SP
 A=M
@@ -76,7 +76,7 @@ A=M
 M=D
 @SP
 M=M+1
-@24
+@16
 D=M
 @SP
 A=M
